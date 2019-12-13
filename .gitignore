@@ -1,0 +1,13 @@
+/*
+
+!/Caffe/
+!/Caffe/**/
+
+__pycache__
+
+!/*.py
+!/*.jpg
+!/*.md
+
+!.gitignore
+
