@@ -219,6 +219,23 @@ def _adaptive_avg_pool2d(raw,input, output_size=(1, 1)):
     return x
 
 
+def _flatten(raw,*args):
+    x = raw(*args)
+    if len(args) == 1:
+        # TODO
+        assert NotImplementedError
+    else:
+        layer_name = log.add_layer(name='flatten')
+        top_blobs = log.add_blobs([x],name='flatten')
+        layer = caffe_net.Layer_param(name=layer_name, type='Reshape', bottom=[log.layers[log.blobs(args[0])]], top=top_blobs)
+        dims = list([0, 1])
+        dims[0] = 0 # the first dim should be batch_size
+        for s in x.size()[1:]:
+            dims[1] *= s
+        layer.param.reshape_param.shape.CopyFrom(caffe_net.pb.BlobShape(dim=dims))
+        log.cnet.add_layer(layer)
+    return x
+
 def _max(raw,*args):
     x = raw(*args)
     if len(args) == 1:
@@ -491,7 +508,7 @@ def _view(input,*args):
         return x
     layer_name = log.add_layer(name='view')
     top_blobs = log.add_blobs([x],name='view')
-    layer = caffe_net.Layer_param(name=layer_name,type='Reshape', bottom=[log.layers[log.blobs(input)]], top=top_blobs)
+    layer = caffe_net.Layer_param(name=layer_name, type='Reshape', bottom=[log.layers[log.blobs(input)]], top=top_blobs)
     # TODO: reshpae added to nn_tools layer
     dims = list(args)
     dims[0] = 0 # the first dim should be batch_size
@@ -505,7 +522,7 @@ def _mean(input,*args,**kwargs):
         return x
     layer_name = log.add_layer(name='mean')
     top_blobs = log.add_blobs([x],name='mean')
-    layer = caffe_net.Layer_param(name=layer_name,type='Reduction', bottom=[log.layers[log.blobs(input)]], top=top_blobs)
+    layer = caffe_net.Layer_param(name=layer_name, type='Reduction', bottom=[log.layers[log.blobs(input)]], top=top_blobs)
     if len(args)==1:
         dim = args[0]
     elif 'dim' in kwargs:
@@ -697,6 +714,7 @@ torch.split = Rp(torch.split, _split)
 torch.max = Rp(torch.max, _max)
 torch.cat = Rp(torch.cat, _cat)
 torch.div = Rp(torch.div, _div)
+torch.flatten = Rp(torch.flatten, _flatten)
 
 # TODO: other types of the view function
 try:
