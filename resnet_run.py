@@ -1,11 +1,10 @@
 import sys
-
 sys.path.insert(0, '..')
+
 import torch
-import torchvision
-import resnet
-from torch.autograd import Variable
 import pytorch_to_caffe
+
+import resnet
 
 if __name__ == '__main__':
     name = 'resnet'
@@ -18,8 +17,9 @@ if __name__ == '__main__':
         if type(m) == torch.nn.Dropout:
             m.train()
     model.apply(apply_dropout)
-    input = torch.ones([1, 3, 112, 112])
-    pytorch_to_caffe.trans_net(model, input, name)
+
+    data = torch.ones([1, 3, 112, 112])
+    pytorch_to_caffe.trans_net(model, data, name)
     pytorch_to_caffe.save_prototxt('{}.prototxt'.format(name))
     pytorch_to_caffe.save_caffemodel('{}.caffemodel'.format(name))
 

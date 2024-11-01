@@ -1,14 +1,16 @@
 import torch
 import torch.nn as nn
 import traceback
-from Caffe import caffe_net
 import torch.nn.functional as F
 from torch.autograd import Variable
-from Caffe import layer_param
 from torch.nn.modules.utils import _pair
+
+from Caffe import caffe_net
+from Caffe import layer_param
+
 import numpy as np
 
-"""
+'''
 How to support a new layer type:
  layer_name=log.add_layer(layer_type_name)
  top_blobs=log.add_blobs(<output of that layer>)
@@ -17,12 +19,8 @@ How to support a new layer type:
  [<layer.add_data(*datas)>]
  log.cnet.add_layer(layer)
 
-Please MUTE the inplace operations to avoid not find in graph
-
-注意：只有torch.nn.functional中的函数才能转换为caffe中的层
-"""
-
-# TODO: support the inplace output of the layers
+注意：只有torch.nn.functional或者torch中的函数才能转换为caffe中的层
+'''
 
 class Blob_LOG():
     def __init__(self):
@@ -39,9 +37,9 @@ NET_INITTED = False
 # 转换原理解析：通过记录
 class TransLog(object):
     def __init__(self):
-        """
+        '''
         doing init() with inputs Variable before using it
-        """
+        '''
         self.layers = {}
         self.detail_layers = {}
         self.detail_blobs = {}
@@ -51,9 +49,9 @@ class TransLog(object):
         self.debug = True
 
     def init(self, inputs):
-        """
+        '''
         :param inputs: is a list of input variables
-        """
+        '''
         self.layers['data'] = 'data'
         self.add_blobs(inputs, 'data', False)
 
@@ -82,19 +80,19 @@ class TransLog(object):
             else:
                 rst.append('{}'.format(name))
             if self.debug:
-                print("{}:{} was added to blobs".format(blob_id, rst[-1]))
-            #print('Add blob {} : {}'.format(rst[-1].center(21),blob.size()))
+                print('{}:{} was added to blobs'.format(blob_id, rst[-1]))
+            # print('Add blob {} : {}'.format(rst[-1].center(21),blob.size()))
             self._blobs[blob_id] = rst[-1]
         return rst
 
     def blobs(self, var):
         var = id(var)
-        #if self.debug:
-        #    print("{}:{} getting".format(var, self._blobs[var]))
+        # if self.debug:
+        #    print('{}:{} getting'.format(var, self._blobs[var]))
         try:
             return self._blobs[var]
         except:
-            print("WARNING: CANNOT FOUND blob {}".format(var))
+            print('WARNING: CANNOT FOUND blob {}'.format(var))
             return None
 
     def inplace_flag(self, name='layer'):
@@ -146,7 +144,7 @@ def _conv_transpose2d(raw,input, weight, bias=None, stride=1, padding=0, output_
 def _linear(raw,input, weight, bias=None):
     x = raw(input,weight,bias)
     layer_name = log.add_layer(name='fc')
-    top_blobs = log.add_blobs([x],name='fc')
+    top_blobs = log.add_blobs([x], name='fc')
     layer = caffe_net.Layer_param(name=layer_name, type='InnerProduct', bottom=[log.layers[log.blobs(input)]], top=top_blobs)
     layer.fc_param(x.size()[1], has_bias=bias is not None)
     if bias is not None:
@@ -183,13 +181,13 @@ def _pool(type,raw,input, x, kernel_size, stride, padding, ceil_mode):
         owidth = (input.size()[3] - _pair(kernel_size)[1] + 2 * _pair(padding)[1]) % (_pair(stride)[1])
         if oheight != 0 or owidth != 0:
             caffe_out = raw(input, kernel_size, stride, padding, ceil_mode=True)
-            print("WARNING: the output shape miss match at {}: "
-                  "input {} output---Pytorch:{}---Caffe:{}\n"
-                  "This is caused by the different implementation that ceil mode in caffe and the floor mode in pytorch.\n"
-                  "You can add the clip layer in caffe prototxt manually if shape mismatch error is caused in caffe. ".format(layer_name, input.size(), x.size(), caffe_out.size()))
+            print('WARNING: the output shape miss match at {}: '
+                  'input {} output---Pytorch:{}---Caffe:{}\n'
+                  'This is caused by the different implementation that ceil mode in caffe and the floor mode in pytorch.\n'
+                  'You can add the clip layer in caffe prototxt manually if shape mismatch error is caused in caffe.'.format(layer_name, input.size(), x.size(), caffe_out.size()))
 
 def _max_pool2d(raw,input, kernel_size, stride=None, padding=0, dilation=1, ceil_mode=False, return_indices=False):
-    x = raw(input, kernel_size, stride, padding, dilation,ceil_mode, return_indices)
+    x = raw(input, kernel_size, stride, padding, dilation, ceil_mode, return_indices)
     _pool('max',raw,input, x, kernel_size, stride, padding,ceil_mode)
     return x
 
@@ -226,7 +224,7 @@ def _flatten(raw,*args):
         assert NotImplementedError
     else:
         layer_name = log.add_layer(name='flatten')
-        top_blobs = log.add_blobs([x],name='flatten')
+        top_blobs = log.add_blobs([x], name='flatten')
         layer = caffe_net.Layer_param(name=layer_name, type='Reshape', bottom=[log.layers[log.blobs(args[0])]], top=top_blobs)
         dims = list([0, 1])
         dims[0] = 0 # the first dim should be batch_size
@@ -288,7 +286,7 @@ def _threshold(raw,input, threshold, value, inplace=False):
         log.layers[log.blobs(x)] = log.layers[log.blobs(input)]
         return x
     if value!=0:
-        raise NotImplemented("value !=0 not implemented in caffe")
+        raise NotImplemented('value !=0 not implemented in caffe')
     x = raw(input, threshold, value, inplace)
     bottom_blobs = [log.layers[log.blobs(input)]]
     layer_name = log.add_layer(name='threshold')
@@ -335,14 +333,37 @@ def _leaky_relu(raw,input, negative_slope=0.01, inplace=False):
     log.layers[log.blobs(x)] = log.layers[log.blobs(input)]
     return x
 
+def _sigmoid(raw,input):
+    # Applies the element-wise function:
+    # Sigmoid(x)= 1/(1+exp(−x)）
+    x = raw(input)
+    name = log.add_layer(name='sigmoid')
+    log.add_blobs([x], name='sigmoid')
+    layer = caffe_net.Layer_param(name=name, type='Sigmoid', bottom=[log.layers[log.blobs(input)]], top=[log.layers[log.blobs(input)]])
+    log.cnet.add_layer(layer)
+    log.layers[log.blobs(x)] = log.layers[log.blobs(input)]
+    return x
+
 def _tanh(raw,input):
-    # for tanh activation
+    # Applies the element-wise function:
+    # torch.nn.Tanh
     x = raw(input)
     name = log.add_layer(name='tanh')
     log.add_blobs([x], name='tanh')
     layer = caffe_net.Layer_param(name=name, type='TanH', bottom=[log.layers[log.blobs(input)]], top=[log.layers[log.blobs(input)]])
     log.cnet.add_layer(layer)
     log.layers[log.blobs(x)] = log.layers[log.blobs(input)]
+    return x
+
+def _hardtanh(raw,input, min_val, max_val, inplace):
+    # Applies the element-wise function:
+    # torch.nn.ReLu6
+    print('relu6: ', log.blobs(input))
+    x = raw(input, min_val, max_val)
+    name = log.add_layer(name='relu6')
+    log.add_blobs([x], name='relu6_blob')
+    layer = caffe_net.Layer_param(name=name, type='ReLU6', bottom=[log.blobs(input)], top=[log.blobs(x)])
+    log.cnet.add_layer(layer)
     return x
 
 def _softmax(raw,input, dim=None, _stacklevel=3):
@@ -392,10 +413,10 @@ def _batch_norm(raw,input, running_mean, running_var, weight=None, bias=None, tr
 
 def _instance_norm(raw,input, running_mean=None, running_var=None, weight=None, bias=None, use_input_stats=True, momentum=0.1, eps=1e-5):
     # TODO: the batch size!=1 view operations
-    print("WARNING: The Instance Normalization transfers to Caffe using BatchNorm, so the batch size should be 1")
+    print('WARNING: The Instance Normalization transfers to Caffe using BatchNorm, so the batch size should be 1')
     if running_var is not None or weight is not None:
         # TODO: the affine=True or track_running_stats=True case
-        raise NotImplementedError("not implement the affine=True or track_running_stats=True case InstanceNorm")
+        raise NotImplementedError('not implement the affine=True or track_running_stats=True case InstanceNorm')
     x= torch.batch_norm(input, weight, bias, running_mean, running_var, use_input_stats, momentum, eps,torch.backends.cudnn.enabled)
     bottom_blobs = [log.layers[log.blobs(input)]]
     layer_name1 = log.add_layer(name='instance_norm')
@@ -428,7 +449,7 @@ def _instance_norm(raw,input, running_mean=None, running_var=None, weight=None, 
         log.layers[log.blobs(x)] = log.layers[log.blobs(input)]
     return x
 
-#upsample layer
+# upsample layer
 def _interpolate(raw,input, size=None, scale_factor=None, mode='nearest', align_corners=None):
     # 定义的参数包括 scale,即输出与输入的尺寸比例,如 2;scale_h、scale_w,
     # 同 scale,分别为 h、w 方向上的尺寸比例;pad_out_h、pad_out_w,仅在 scale 为 2 时
@@ -436,8 +457,8 @@ def _interpolate(raw,input, size=None, scale_factor=None, mode='nearest', align_
     # 出图像尺寸的数值。在 Upsample 的相关代码中,推荐仅仅使用 upsample_h、
     # upsample_w 准确定义 Upsample 层的输出尺寸,其他所有的参数都不推荐继续使用。
     # for nearest _interpolate
-    if mode != "nearest" or align_corners != None:
-        raise NotImplementedError("not implement F.interpolate totoaly")
+    if mode != 'nearest' or align_corners != None:
+        raise NotImplementedError('not implement F.interpolate totoaly')
     x = raw(input,size , scale_factor ,mode)
     layer_name = log.add_layer(name='upsample')
     top_blobs = log.add_blobs([x], name='upsample'.format(type))
@@ -446,42 +467,8 @@ def _interpolate(raw,input, size=None, scale_factor=None, mode='nearest', align_
     log.cnet.add_layer(layer)
     return x
 
-
-#sigmid layer
-def _sigmoid(raw,input):
-    # Applies the element-wise function:
-    # Sigmoid(x)= 1/(1+exp(−x)）
-    x = raw(input)
-    name = log.add_layer(name='sigmoid')
-    log.add_blobs([x], name='sigmoid')
-    layer = caffe_net.Layer_param(name=name, type='Sigmoid', bottom=[log.layers[log.blobs(input)]], top=[log.layers[log.blobs(input)]])
-    log.cnet.add_layer(layer)
-    log.layers[log.blobs(x)] = log.layers[log.blobs(input)]
-
-#tanh layer
-def _tanh(raw,input):
-    # Applies the element-wise function:
-    # torch.nn.Tanh
-    x = raw(input)
-    name = log.add_layer(name='tanh')
-    log.add_blobs([x], name='tanh')
-    layer = caffe_net.Layer_param(name=name, type='TanH', bottom=[log.layers[log.blobs(input)]], top=[log.layers[log.blobs(input)]])
-    log.cnet.add_layer(layer)
-    log.layers[log.blobs(x)] = log.layers[log.blobs(input)]
-
-def _hardtanh(raw, input, min_val, max_val, inplace):
-    # Applies the element-wise function:
-    # torch.nn.ReLu6
-    print('relu6: ', log.blobs(input))
-    x = raw(input, min_val, max_val)
-    name = log.add_layer(name='relu6')
-    log.add_blobs([x], name='relu6_blob')
-    layer = caffe_net.Layer_param(name=name, type='ReLU6', bottom=[log.blobs(input)], top=[log.blobs(x)])
-    log.cnet.add_layer(layer)
-    return x
-
-#L2Norm layer
-def _l2Norm(raw, input, weight, eps):
+# L2Norm layer
+def _l2Norm(raw,input, weight, eps):
     # Applies the element-wise function:
     # L2Norm in vgg_ssd
     x = raw(input, weight, eps)
@@ -507,7 +494,7 @@ def _view(input,*args):
     if not NET_INITTED:
         return x
     layer_name = log.add_layer(name='view')
-    top_blobs = log.add_blobs([x],name='view')
+    top_blobs = log.add_blobs([x], name='view')
     layer = caffe_net.Layer_param(name=layer_name, type='Reshape', bottom=[log.layers[log.blobs(input)]], top=top_blobs)
     # TODO: reshpae added to nn_tools layer
     dims = list(args)
@@ -516,12 +503,12 @@ def _view(input,*args):
     log.cnet.add_layer(layer)
     return x
 
-def _mean(input,*args,**kwargs):
+def _mean(input,*args, **kwargs):
     x = raw_mean(input, *args,**kwargs)
     if not NET_INITTED:
         return x
     layer_name = log.add_layer(name='mean')
-    top_blobs = log.add_blobs([x],name='mean')
+    top_blobs = log.add_blobs([x], name='mean')
     layer = caffe_net.Layer_param(name=layer_name, type='Reduction', bottom=[log.layers[log.blobs(input)]], top=top_blobs)
     if len(args)==1:
         dim = args[0]
@@ -588,11 +575,28 @@ def _mul(input,*args):
     x = raw__mul__(input, *args)
     if not NET_INITTED:
         return x
-    layer_name = log.add_layer(name='mul')
-    top_blobs = log.add_blobs([x], name='mul')
-    layer = caffe_net.Layer_param(name=layer_name, type='Eltwise', bottom=[log.layers[log.blobs(input)], log.layers[log.blobs(args[0])]], top=top_blobs)
-    layer.param.eltwise_param.operation = 0  # product is 1
-    log.cnet.add_layer(layer)
+    if input.size() == args[0].size():
+        layer_name = log.add_layer(name='mul')
+        top_blobs = log.add_blobs([x], name='mul')
+        layer = caffe_net.Layer_param(name=layer_name, type='Eltwise', bottom=[log.layers[log.blobs(input)], log.layers[log.blobs(args[0])]], top=top_blobs)
+        layer.param.eltwise_param.operation = 0  # product is 1
+        log.cnet.add_layer(layer)
+    else:
+        layer_name0 = log.add_layer(name='se_reshape')
+        layer0 = caffe_net.Layer_param(name=layer_name0, type='Reshape', bottom=[log.layers[log.blobs(args[0])]], top=log.add_blobs([args[0]], name='se_reshape'))
+        dims = list([0, 1])
+        dims[0] = 0 # the first dim should be batch_size
+        for s in args[0].size()[1:]:
+            dims[1] *= s
+        layer0.param.reshape_param.shape.CopyFrom(caffe_net.pb.BlobShape(dim=dims))
+        log.cnet.add_layer(layer0)
+
+        layer_name = log.add_layer(name='se_scale')
+        top_blobs = log.add_blobs([x], name='se_scale')
+        layer = caffe_net.Layer_param(name=layer_name, type='Scale', bottom=[log.layers[log.blobs(input)], log.layers[log.blobs(args[0])]], top=top_blobs)
+        layer.param.scale_param.axis = 0
+        layer.param.scale_param.bias_term = False
+        log.cnet.add_layer(layer)
     return x
 
 def _imul(input,*args):
@@ -609,7 +613,7 @@ def _imul(input,*args):
     return x
 
 
-#Permute layer
+# Permute layer
 def _permute(input,*args):
     x = raw__permute__(input, *args)
     name = log.add_layer(name='permute')
@@ -624,7 +628,7 @@ def _permute(input,*args):
     log.cnet.add_layer(layer)
     return x
 
-#contiguous
+# contiguous
 def _contiguous(input,*args):
     x = raw__contiguous__(input, *args)
     name = log.add_layer(name='contiguous')
@@ -633,13 +637,13 @@ def _contiguous(input,*args):
     log.cnet.add_layer(layer)
     return x
 
-#pow
+# pow
 def _pow(input,*args):
     x = raw__pow__(input, *args)
     log.add_blobs([x], name='pow')
     return x
 
-#sum
+# sum
 def _sum(input,*args):
     x = raw__sum__(input, *args)
     log.add_blobs([x], name='sum')
@@ -715,6 +719,7 @@ torch.max = Rp(torch.max, _max)
 torch.cat = Rp(torch.cat, _cat)
 torch.div = Rp(torch.div, _div)
 torch.flatten = Rp(torch.flatten, _flatten)
+torch.sigmoid = Rp(torch.sigmoid, _sigmoid)
 
 # TODO: other types of the view function
 try:
@@ -773,8 +778,8 @@ def trans_net(net,input_var, name='TransferedPytorchModel'):
     print('Starting Transform, This will take a while')
     log.init([input_var])
     log.cnet.net.name = name
-    #log.cnet.net.input.extend([log.blobs(input_var)])
-    #log.cnet.net.input_dim.extend(input_var.size())
+    # log.cnet.net.input.extend([log.blobs(input_var)])
+    # log.cnet.net.input_dim.extend(input_var.size())
     layer = caffe_net.Layer_param(name='data', type='Input', top=['data'])
     layer.input_param(input_var.data.numpy().shape)
     log.cnet.add_layer(layer)
@@ -782,14 +787,14 @@ def trans_net(net,input_var, name='TransferedPytorchModel'):
     NET_INITTED = True
     for name,layer in net.named_modules():
         layer_names[layer] = name
-    print("torch ops name:", layer_names)
+    print('torch ops name: ', layer_names)
     out = net.forward(input_var)
     print('Transform Completed')
     for key in log.layers:
         print('{} {}'.format(key, log.layers[key]))
 
 def save_prototxt(save_name):
-    log.cnet.remove_layer_by_type("NeedRemove")
+    log.cnet.remove_layer_by_type('NeedRemove')
     log.cnet.save_prototxt(save_name)
 
 def save_caffemodel(save_name):

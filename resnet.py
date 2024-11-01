@@ -79,11 +79,12 @@ class Bottleneck(nn.Module):
         self.left = nn.Sequential(OrderedDict([
             ('conv1', conv1x1(inplanes, width)),
             ('bn1', norm_layer(width)),
+            ('relu1', nn.ReLU(inplace=True)),
             ('conv2', conv3x3(width, width, stride, groups, dilation)),
             ('bn2', norm_layer(width)),
+            ('relu2', nn.ReLU(inplace=True)),
             ('conv3', conv1x1(width, planes * self.expansion)),
-            ('bn3', norm_layer(planes * self.expansion)),
-            ('relu', nn.ReLU(inplace=True))
+            ('bn3', norm_layer(planes * self.expansion))
         ]))
 
         self.shortcut = nn.Sequential() if downsample is None else downsample
@@ -257,6 +258,7 @@ def fuse_conv_and_bn(conv, bn):
             b_conv = conv.bias
         else:
             b_conv = torch.zeros(conv.weight.size(0))
+        b_conv = torch.mm(w_bn, b_conv.view(-1, 1)).view(-1)
         b_bn = bn.bias - bn.weight.mul(bn.running_mean).div(torch.sqrt(bn.running_var + bn.eps))
         fusedconv.bias.copy_(b_conv + b_bn)
 

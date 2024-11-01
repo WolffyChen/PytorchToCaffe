@@ -1,10 +1,10 @@
 import torch
-import torchvision
-import resnet
-from torch.autograd import Variable
+
 import cv2
 import caffe
 import numpy as np
+
+import resnet
 
 
 if __name__ == '__main__':
@@ -19,6 +19,10 @@ if __name__ == '__main__':
     img = np.ascontiguousarray(img, dtype=np.float32)
     img /= 255.0
     img = torch.from_numpy(img).unsqueeze(0)
+    # mean = np.array([0.485, 0.456, 0.406])
+    # img -= mean[:, np.newaxis, np.newaxis]
+    # std = np.array([0.229, 0.224, 0.225])
+    # img /= std[:, np.newaxis, np.newaxis]
 
     pred = model(img)
     for i in range(len(pred)):
